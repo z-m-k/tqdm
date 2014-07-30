@@ -2,7 +2,7 @@ __all__ = ['tqdm', 'trange']
 
 import sys
 import time
-
+from IPython.display import clear_output, display, HTML
 
 def format_interval(t):
     mins, s = divmod(int(t), 60)
@@ -19,41 +19,48 @@ def format_meter(n, total, elapsed):
     # elapsed - number of seconds passed since start
     if n > total:
         total = None
-    
+
     elapsed_str = format_interval(elapsed)
     rate = '%5.2f' % (n / elapsed) if elapsed else '?'
-    
-    if total:
-        frac = float(n) / total
-        
-        N_BARS = 10
-        bar_length = int(frac*N_BARS)
-        bar = '#'*bar_length + '-'*(N_BARS-bar_length)
-        
-        percentage = '%3d%%' % (frac * 100)
-        
-        left_str = format_interval(elapsed / n * (total-n)) if n else '?'
-        
-        return '|%s| %d/%d %s [elapsed: %s left: %s, %s iters/sec]' % (
-            bar, n, total, percentage, elapsed_str, left_str, rate)
-    
-    else:
-        return '%d [elapsed: %s, %s iters/sec]' % (n, elapsed_str, rate)
+
+    frac = float(n) / total * 100
+
+    percentage = '%3d%%' % (frac,)
+
+    left_str = format_interval(elapsed / n * (total-n)) if n else '?'
+
+    return frac, '%s (elapsed: %s &mdash; left: %s &mdash; %s iters/sec &mdash; %d/%d)' % (
+        percentage, elapsed_str, left_str, rate, n, total)
 
 
 class StatusPrinter(object):
-    def __init__(self, file):
-        self.file = file
-        self.last_printed_len = 0
-    
+    def __init__(self, desc):
+        if desc==False:
+            self.html= lambda x, y: HTML(
+                """
+                <div class="progress progress-striped">
+                  <div class="bar bar-success" style="width: {0}%">
+                    <span style="float: left; color:#000; text-align: left; margin-left: 1em">{1}</span>
+                  </div>
+                </div>
+                """.format(x, y))
+        else:
+            self.html= lambda x, y: HTML(
+                """
+                <div class="progress progress-striped">
+                  <div class="bar bar-success" style="width: {0}%">
+                    <span style="float: left; color:#000; text-align: left; margin-left: 1em">{1}</span>
+                  </div>
+                </div>
+                """.format(x, desc+': '+y))
+
+
     def print_status(self, s):
-        self.file.write('\r'+s+' '*max(self.last_printed_len-len(s), 0))
-        self.file.flush()
-        self.last_printed_len = len(s)
+        clear_output(wait=1)
+        display(self.html(*s))
 
 
-def tqdm(iterable, desc='', total=None, leave=False, file=sys.stderr,
-         mininterval=0.5, miniters=1):
+def tqdm(iterable, desc=False, total=None, leave=False, mininterval=0.5, miniters=1, total_iterations=100):
     """
     Get an iterable object, and return an iterator which acts exactly like the
     iterable, but prints a progress meter and updates it every time a value is
@@ -72,13 +79,11 @@ def tqdm(iterable, desc='', total=None, leave=False, file=sys.stderr,
         try:
             total = len(iterable)
         except TypeError:
-            total = None
-    
-    prefix = desc+': ' if desc else ''
-    
-    sp = StatusPrinter(file)
-    sp.print_status(prefix + format_meter(0, total, 0))
-    
+            total = total_iterations
+
+    sp = StatusPrinter(desc)
+    sp.print_status(format_meter(0, total, 0))
+
     start_t = last_print_t = time.time()
     last_print_n = 0
     n = 0
@@ -90,18 +95,16 @@ def tqdm(iterable, desc='', total=None, leave=False, file=sys.stderr,
             # We check the counter first, to reduce the overhead of time.time()
             cur_t = time.time()
             if cur_t - last_print_t >= mininterval:
-                sp.print_status(prefix + format_meter(n, total, cur_t-start_t))
+                sp.print_status(format_meter(n, total, cur_t-start_t))
                 last_print_n = n
                 last_print_t = cur_t
-    
-    if not leave:
-        sp.print_status('')
-        sys.stdout.write('\r')
+
+    if leave==False:
+        clear_output()
     else:
         if last_print_n < n:
             cur_t = time.time()
-            sp.print_status(prefix + format_meter(n, total, cur_t-start_t))
-        file.write('\n')
+            sp.print_status(format_meter(n, total, cur_t-start_t))
 
 
 def trange(*args, **kwargs):
@@ -110,5 +113,5 @@ def trange(*args, **kwargs):
         f = xrange
     except NameError:
         f = range
-    
+
     return tqdm(f(*args), **kwargs)
